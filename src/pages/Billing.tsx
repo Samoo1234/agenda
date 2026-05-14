@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useSubscription } from '../hooks/useSubscription';
+import { supabase } from '../lib/supabase';
 import { Check, Crown, Zap, Clock, AlertTriangle, MessageCircle, Mail, ArrowRight } from 'lucide-react';
 import './Billing.css';
 import './Admin.css';
@@ -7,8 +9,10 @@ const WHATSAPP = '5566984048957';
 const EMAIL = 'suporte@samtecsolucoes.com.br';
 
 export default function Billing() {
+  const [upgradingId, setUpgradingId] = useState<string | null>(null);
   const {
     plan,
+    clinic, // Adicionando clinic aqui também que faltava
     allPlans,
     subscriptionStatus,
     daysLeft,
@@ -57,11 +61,37 @@ export default function Billing() {
     return `R$ ${(cents / 100).toFixed(0)}`;
   };
 
-  const handleUpgrade = (planId: string) => {
-    const message = encodeURIComponent(
-      `Olá! Gostaria de fazer upgrade para o plano ${planId.charAt(0).toUpperCase() + planId.slice(1)} do Vision Care. Meu plano atual é ${plan?.name || 'Starter'}.`
-    );
-    window.open(`https://wa.me/${WHATSAPP}?text=${message}`, '_blank');
+  const handleUpgrade = async (planId: string, stripePriceId?: string) => {
+    if (!stripePriceId) {
+      // Fallback para WhatsApp se não houver ID do Stripe configurado
+      const message = encodeURIComponent(
+        `Olá! Gostaria de fazer upgrade para o plano ${planId.charAt(0).toUpperCase() + planId.slice(1)} do Vision Care.`
+      );
+      window.open(`https://wa.me/${WHATSAPP}?text=${message}`, '_blank');
+      return;
+    }
+
+    try {
+      setUpgradingId(planId);
+      
+      const { data, error } = await supabase.functions.invoke('create-checkout', {
+        body: { 
+          priceId: stripePriceId,
+          clinicId: clinic?.id,
+          returnUrl: window.location.origin + '/admin/billing'
+        }
+      });
+
+      if (error) throw error;
+      if (data?.url) {
+        window.location.href = data.url;
+      }
+    } catch (err) {
+      console.error('Erro ao iniciar checkout:', err);
+      alert('Não foi possível iniciar o pagamento. Tente novamente ou contate o suporte.');
+    } finally {
+      setUpgradingId(null);
+    }
   };
 
   const branchPercent = getUsagePercent(currentBranches, plan?.max_branches ?? 1);
@@ -129,6 +159,7 @@ export default function Billing() {
           const isCurrent = p.id === plan?.id;
           const isFeatured = p.id === 'pro';
           const price = formatPrice(p.price_monthly);
+          const isUpgrading = upgradingId === p.id;
 
           return (
             <div key={p.id} className={`plan-card ${isFeatured ? 'featured' : ''} ${isCurrent ? 'current' : ''}`}>
@@ -166,11 +197,18 @@ export default function Billing() {
                 </button>
               ) : p.price_monthly > (plan?.price_monthly ?? 0) ? (
                 <button
-                  className={`plan-card-btn ${isFeatured ? 'primary' : 'outlined'}`}
-                  onClick={() => handleUpgrade(p.id)}
+                  className={`plan-card-btn ${isFeatured ? 'primary' : 'outlined'} ${isUpgrading ? 'loading' : ''}`}
+                  onClick={() => handleUpgrade(p.id, p.stripe_price_id)}
+                  disabled={isUpgrading}
                 >
-                  <Zap size={18} /> Fazer upgrade
-                  <ArrowRight size={16} />
+                  {isUpgrading ? (
+                    <div className="loading-spinner-small" />
+                  ) : (
+                    <>
+                      <Zap size={18} /> Fazer upgrade
+                      <ArrowRight size={16} />
+                    </>
+                  )}
                 </button>
               ) : (
                 <button className="plan-card-btn outlined" disabled>
@@ -181,6 +219,7 @@ export default function Billing() {
           );
         })}
       </div>
+
 
       {/* Contact */}
       <div className="billing-contact">

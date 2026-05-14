@@ -10,6 +10,7 @@ interface Plan {
   max_doctors: number;
   max_appointments_month: number;
   features: string[];
+  stripe_price_id?: string;
 }
 
 interface SubscriptionInfo {
@@ -24,6 +25,7 @@ interface SubscriptionInfo {
   loading: boolean;
   currentBranches: number;
   currentDoctors: number;
+  clinic: any;
   canAddBranch: () => boolean;
   canAddDoctor: () => boolean;
   refresh: () => Promise<void>;
@@ -130,6 +132,7 @@ export function useSubscription(): SubscriptionInfo {
     loading,
     currentBranches,
     currentDoctors,
+    clinic,
     canAddBranch,
     canAddDoctor,
     refresh: fetchSubscription,
