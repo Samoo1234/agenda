@@ -266,3 +266,38 @@
   background: rgba(255, 255, 255, 0.6);
   color: var(--secondary-color);
 }
+
+/* Dashboard Quick Actions */
+.actions-cell {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.action-btn-quick {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.4rem;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  color: var(--text-muted);
+}
+
+.action-btn-quick:hover:not(:disabled) {
+  background: rgba(0,0,0,0.05);
+  transform: scale(1.15);
+}
+
+.action-btn-quick.financial { color: var(--primary-color); }
+.action-btn-quick.confirm { color: #10b981; }
+.action-btn-quick.reschedule { color: #f59e0b; }
+.action-btn-quick.cancel { color: #ef4444; }
+
+.action-btn-quick:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}

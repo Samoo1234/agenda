@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Save, Trash2, CreditCard, ChevronDown, CheckCircle2, AlertCircle, Printer, ArrowLeft } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Plus, Save, Trash2, CheckCircle2, AlertCircle, Printer } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import './Financial.css';
@@ -33,7 +34,15 @@ export default function FinancialRecords() {
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [searchParams] = useSearchParams();
+  const [selectedDate, setSelectedDate] = useState(searchParams.get('date') || new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    const branchParam = searchParams.get('branch');
+    if (branchParam) {
+      setSelectedBranch(branchParam);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (clinic?.id) {
@@ -56,7 +65,10 @@ export default function FinancialRecords() {
     
     if (data && data.length > 0) {
       setBranches(data);
-      setSelectedBranch(data[0].id);
+      const branchParam = searchParams.get('branch');
+      if (!branchParam) {
+        setSelectedBranch(data[0].id);
+      }
     }
   };
 
@@ -75,6 +87,10 @@ export default function FinancialRecords() {
       const uniqueDates = Array.from(new Set(data.map(d => d.date)));
       setAvailableDates(uniqueDates);
     }
+  };
+
+  const printSummary = () => {
+    window.print();
   };
 
   const fetchRecords = async () => {
@@ -146,21 +162,7 @@ export default function FinancialRecords() {
         };
       });
 
-      const manualRecords = finData?.filter(f => !f.appointment_id).map(rec => ({
-        id: rec.id,
-        branch_id: rec.branch_id,
-        client_name: rec.notes?.split('\n')[0] || 'Cliente Manual',
-        amount: rec.total_amount,
-        type: rec.type,
-        status: rec.status,
-        notes: rec.notes || '',
-        payments: rec.financial_payments.map((p: any) => ({
-          method: p.method,
-          amount: p.amount
-        }))
-      })) || [];
-
-      setRecords([...mergedRecords, ...manualRecords]);
+      setRecords(mergedRecords);
     } catch (err) {
       console.error('Erro ao buscar registros:', err);
     } finally {
@@ -168,19 +170,6 @@ export default function FinancialRecords() {
     }
   };
 
-  const addRecord = () => {
-    const newRecord: FinancialRecord = {
-      branch_id: selectedBranch,
-      client_name: '',
-      amount: 0,
-      type: 'Particular',
-      status: 'Caso Clínico',
-      notes: '',
-      payments: [],
-      isEditing: true
-    };
-    setRecords([newRecord, ...records]);
-  };
 
   const updateRecord = (index: number, updates: Partial<FinancialRecord>) => {
     const newRecords = [...records];
@@ -234,10 +223,9 @@ export default function FinancialRecords() {
 
       if (mainError) throw mainError;
 
-      // 2. Limpar pagamentos antigos e inserir novos
-      if (record.id) {
-        await supabase.from('financial_payments').delete().eq('record_id', record.id);
-      }
+      // 2. Limpar pagamentos antigos e inserir novos para este registro
+      // Usamos o ID que veio do banco (mainData.id) para garantir a limpeza total
+      await supabase.from('financial_payments').delete().eq('record_id', mainData.id);
 
       const { error: payError } = await supabase
         .from('financial_payments')
@@ -254,6 +242,19 @@ export default function FinancialRecords() {
       alert('Erro ao salvar registro financeiro');
       console.error(err);
     }
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
+
+  const handleCurrencyChange = (value: string, callback: (num: number) => void) => {
+    const cleanValue = value.replace(/\D/g, '');
+    const numberValue = cleanValue ? parseFloat(cleanValue) / 100 : 0;
+    callback(numberValue);
   };
 
   // Cálculos de Resumo
@@ -287,6 +288,16 @@ export default function FinancialRecords() {
   const totalType = Object.values(summaries.byType).reduce((sum: any, val: any) => sum + val.total, 0);
   const totalMethod = Object.values(summaries.byMethod).reduce((sum: any, val: any) => sum + val.total, 0);
 
+  const summaryByType = Object.entries(summaries.byType).map(([type, data]: [string, any]) => ({
+    type,
+    ...data
+  }));
+
+  const summaryByMethod = Object.entries(summaries.byMethod).map(([method, data]: [string, any]) => ({
+    method,
+    ...data
+  }));
+
   return (
     <div className="financial-container">
       <header className="panel-header">
@@ -294,29 +305,39 @@ export default function FinancialRecords() {
           <h1>Registros Financeiros</h1>
           <p className="text-muted">Lançamento financeiro diário</p>
         </div>
-        <div className="flex gap-2">
-          <select 
-            className="select-cell w-auto"
-            value={selectedBranch}
-            onChange={(e) => setSelectedBranch(e.target.value)}
-          >
-            {branches.map(b => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
-          <select 
-            className="select-cell w-auto"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-          >
-            <option value="">Selecionar Data...</option>
-            {availableDates.map(date => (
-              <option key={date} value={date}>
-                {new Date(date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', weekday: 'short' })}
-              </option>
-            ))}
-          </select>
-          <button className="btn-secondary flex items-center gap-2">
+        <div className="header-filters">
+          <div className="filter-item">
+            <span className="filter-label">Filial</span>
+            <select 
+              className="select-cell w-auto"
+              style={{ minWidth: '200px' }}
+              value={selectedBranch}
+              onChange={(e) => setSelectedBranch(e.target.value)}
+            >
+              {branches.map(b => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-item">
+            <span className="filter-label">Data de Referência</span>
+            <select 
+              className="select-cell w-auto"
+              style={{ minWidth: '220px' }}
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+            >
+              <option value="">Selecionar Data...</option>
+              {availableDates.map(date => (
+                <option key={date} value={date}>
+                  {new Date(date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', weekday: 'short' })}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button className="btn-print" onClick={printSummary}>
             <Printer size={18} /> Imprimir Resumo
           </button>
         </div>
@@ -338,13 +359,13 @@ export default function FinancialRecords() {
                 <tr key={type}>
                   <td>{type}</td>
                   <td>{summaries.byType[type].count}</td>
-                  <td>{summaries.byType[type].total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                  <td>{Number(summaries.byType[type].total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                 </tr>
               ))}
               <tr className="total-row">
                 <td>Total</td>
                 <td>{records.length}</td>
-                <td>{totalType.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                <td>{Number(totalType).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
               </tr>
             </tbody>
           </table>
@@ -365,13 +386,13 @@ export default function FinancialRecords() {
                 <tr key={method}>
                   <td>{method}</td>
                   <td>{summaries.byMethod[method].count}</td>
-                  <td>{summaries.byMethod[method].total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                  <td>{Number(summaries.byMethod[method].total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                 </tr>
               ))}
               <tr className="total-row">
                 <td>Total</td>
                 <td>-</td>
-                <td>{totalMethod.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                <td>{Number(totalMethod).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
               </tr>
             </tbody>
           </table>
@@ -392,107 +413,227 @@ export default function FinancialRecords() {
             </tr>
           </thead>
           <tbody>
-            {records.map((record, idx) => {
-              const paidTotal = record.payments.reduce((sum, p) => sum + p.amount, 0);
-              const diff = record.amount - paidTotal;
-              const isDiffOk = Math.abs(diff) < 0.01;
+            {loading ? (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', padding: '3rem' }}>
+                  <p className="text-muted">Carregando lançamentos...</p>
+                </td>
+              </tr>
+            ) : records.length === 0 ? (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', padding: '3rem' }}>
+                  <p className="text-muted">Nenhum agendamento encontrado para esta data e filial.</p>
+                </td>
+              </tr>
+            ) : (
+              records.map((record, idx) => {
+                const paidTotal = record.payments.reduce((sum, p) => sum + p.amount, 0);
+                const diff = record.amount - paidTotal;
+                const isDiffOk = Math.abs(diff) < 0.01;
 
-              return (
-                <tr key={record.id || idx}>
-                  <td>
-                    <input 
-                      type="text" 
-                      className="input-cell" 
-                      placeholder="Nome do Cliente"
-                      value={record.client_name}
-                      onChange={(e) => updateRecord(idx, { client_name: e.target.value })}
-                    />
-                  </td>
-                  <td width="120">
-                    <input 
-                      type="number" 
-                      className="input-cell" 
-                      value={record.amount}
-                      onChange={(e) => updateRecord(idx, { amount: parseFloat(e.target.value) || 0 })}
-                    />
-                  </td>
-                  <td>
-                    <select 
-                      className="select-cell"
-                      value={record.type}
-                      onChange={(e) => updateRecord(idx, { type: e.target.value })}
-                    >
-                      {RECORD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </td>
-                  <td>
-                    <div className="payments-column">
-                      {record.payments.map((p, pIdx) => (
-                        <div key={pIdx} className="payment-item">
-                          <select 
-                            className="select-cell text-xs p-1 w-24"
-                            value={p.method}
-                            onChange={(e) => updatePayment(idx, pIdx, { method: e.target.value })}
-                          >
-                            {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
-                          </select>
-                          <input 
-                            type="number" 
-                            className="input-cell text-xs p-1 w-20"
-                            value={p.amount}
-                            onChange={(e) => updatePayment(idx, pIdx, { amount: parseFloat(e.target.value) || 0 })}
-                          />
-                          <button onClick={() => removePayment(idx, pIdx)} className="text-red-500 p-1">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      ))}
-                      <button onClick={() => addPayment(idx)} className="add-payment-btn">
-                        <Plus size={14} /> Adicionar Pagamento
-                      </button>
-                      <div className={`diff-indicator ${isDiffOk ? 'diff-ok' : 'diff-error'}`}>
-                        {isDiffOk ? (
-                          <span className="flex items-center gap-1"><CheckCircle2 size={12} /> Total OK</span>
-                        ) : (
-                          <span className="flex items-center gap-1">
-                            <AlertCircle size={12} /> Faltam R$ {diff.toFixed(2)}
-                          </span>
-                        )}
+                return (
+                  <tr key={record.id || idx}>
+                    <td>
+                      <input 
+                        type="text" 
+                        className="input-cell" 
+                        placeholder="Nome do Cliente"
+                        value={record.client_name}
+                        disabled={!!record.appointment_id}
+                        onChange={(e) => updateRecord(idx, { client_name: e.target.value })}
+                      />
+                    </td>
+                    <td width="140">
+                      <div className="currency-input-wrapper">
+                        <span className="currency-prefix">R$</span>
+                        <input 
+                          type="text" 
+                          className="input-cell" 
+                          value={formatCurrency(record.amount)}
+                          onChange={(e) => handleCurrencyChange(e.target.value, (val) => updateRecord(idx, { amount: val }))}
+                        />
                       </div>
-                    </div>
-                  </td>
-                  <td>
-                    <select 
-                      className="select-cell"
-                      value={record.status}
-                      onChange={(e) => updateRecord(idx, { status: e.target.value })}
-                    >
-                      {RECORD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </td>
-                  <td>
-                    <textarea 
-                      className="input-cell" 
-                      rows={1}
-                      value={record.notes}
-                      onChange={(e) => updateRecord(idx, { notes: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <button 
-                      className="save-row-btn"
-                      onClick={() => saveRecord(idx)}
-                      disabled={!isDiffOk || !record.client_name}
-                    >
-                      <Save size={18} />
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
+                    </td>
+                    <td>
+                      <select 
+                        className="select-cell"
+                        value={record.type}
+                        onChange={(e) => updateRecord(idx, { type: e.target.value })}
+                      >
+                        {RECORD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <div className="payments-column">
+                        {record.payments.map((p, pIdx) => (
+                          <div key={pIdx} className="payment-item">
+                            <select 
+                              className="select-cell text-xs p-1 w-24"
+                              value={p.method}
+                              onChange={(e) => updatePayment(idx, pIdx, { method: e.target.value })}
+                            >
+                              {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                            <div className="currency-input-wrapper flex-1">
+                              <span className="currency-prefix text-xs">R$</span>
+                              <input 
+                                type="text" 
+                                className="input-cell text-xs p-1"
+                                value={formatCurrency(p.amount)}
+                                onChange={(e) => handleCurrencyChange(e.target.value, (val) => updatePayment(idx, pIdx, { amount: val }))}
+                              />
+                            </div>
+                            <button onClick={() => removePayment(idx, pIdx)} className="text-red-500 p-1">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                        <button onClick={() => addPayment(idx)} className="add-payment-btn">
+                          <Plus size={14} /> Adicionar Pagamento
+                        </button>
+                        <div className={`diff-indicator ${isDiffOk ? 'diff-ok' : 'diff-error'}`}>
+                          {isDiffOk ? (
+                            <span className="flex items-center gap-1"><CheckCircle2 size={12} /> Total OK</span>
+                          ) : (
+                            <span className="flex items-center gap-1">
+                              <AlertCircle size={12} /> Faltam R$ {diff.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <select 
+                        className="select-cell"
+                        value={record.status}
+                        onChange={(e) => updateRecord(idx, { status: e.target.value })}
+                      >
+                        {RECORD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <textarea 
+                        className="input-cell" 
+                        rows={1}
+                        value={record.notes}
+                        onChange={(e) => updateRecord(idx, { notes: e.target.value })}
+                      />
+                    </td>
+                    <td>
+                      <button 
+                        className="save-row-btn"
+                        onClick={() => saveRecord(idx)}
+                        disabled={!isDiffOk || !record.client_name}
+                      >
+                        <Save size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </section>
+      {/* Área de Impressão (Oculta na tela) */}
+      <div id="print-report" className="print-only">
+        <div className="print-header">
+          <div className="print-title-group">
+            <h1>Relatório de Fechamento Financeiro</h1>
+            <p className="print-subtitle">{clinic?.name} - {branches.find(b => b.id === selectedBranch)?.name}</p>
+          </div>
+          <div className="print-date-info">
+            <p><strong>Data de Referência:</strong> {new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+            <p><strong>Gerado em:</strong> {new Date().toLocaleString('pt-BR')}</p>
+          </div>
+        </div>
+
+        <div className="print-grid">
+          <div className="print-section">
+            <h3>Resumo por Tipo</h3>
+            <table className="print-table">
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Qtd</th>
+                  <th className="text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summaryByType.map(s => (
+                  <tr key={s.type}>
+                    <td>{s.type}</td>
+                    <td>{s.count}</td>
+                    <td className="text-right">{formatCurrency(s.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="print-section">
+            <h3>Resumo por Forma de Pagamento</h3>
+            <table className="print-table">
+              <thead>
+                <tr>
+                  <th>Forma</th>
+                  <th>Qtd</th>
+                  <th className="text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summaryByMethod.map(s => (
+                  <tr key={s.method}>
+                    <td>{s.method}</td>
+                    <td>{s.count}</td>
+                    <td className="text-right">{formatCurrency(s.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="print-section">
+          <h3>Detalhamento de Atendimentos</h3>
+          <table className="print-table">
+            <thead>
+              <tr>
+                <th>Paciente</th>
+                <th>Tipo</th>
+                <th>Pagamentos</th>
+                <th className="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.map(record => (
+                <tr key={record.id || record.appointment_id}>
+                  <td>{record.client_name}</td>
+                  <td>{record.type}</td>
+                  <td>
+                    {record.payments.map(p => `${p.method}: ${formatCurrency(p.amount)}`).join(' | ')}
+                  </td>
+                  <td className="text-right">{formatCurrency(record.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={3} className="text-right"><strong>TOTAL GERAL</strong></td>
+                <td className="text-right"><strong>{formatCurrency(summaryByType.reduce((acc, curr) => acc + curr.total, 0))}</strong></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div className="print-footer">
+          <div className="signature-line">
+            <div className="line"></div>
+            <p>Assinatura do Responsável</p>
+          </div>
+          <p className="print-disclaimer">Documento gerado pelo sistema de gestão Vision Care.</p>
+        </div>
+      </div>
     </div>
   );
 }

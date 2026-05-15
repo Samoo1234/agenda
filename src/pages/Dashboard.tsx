@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Clock, Edit2, X } from 'lucide-react';
+import { Clock, Edit2, X, CircleDollarSign, Check, Trash2, Calendar } from 'lucide-react';
 
 export default function Dashboard() {
   const formatDate = (dateStr: string) => {
@@ -11,6 +12,7 @@ export default function Dashboard() {
   };
 
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const [appointments, setAppointments] = useState<any[]>([]);
 
   // Modal de Edição
@@ -39,6 +41,7 @@ export default function Dashboard() {
         allocations (
           id,
           date,
+          branch_id,
           clinic_id,
           branches (name),
           doctors (name)
@@ -183,8 +186,59 @@ export default function Dashboard() {
     }
   };
 
+  const handleQuickStatus = async (apptId: string, newStatus: string) => {
+    if (newStatus === 'cancelado' && !window.confirm('Tem certeza que deseja cancelar este agendamento?')) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status: newStatus })
+      .eq('id', apptId);
+      
+    if (error) {
+      alert('Erro ao atualizar status: ' + error.message);
+    } else {
+      fetchAppointments();
+    }
+  };
+
+  const goToFinancial = (appt: any) => {
+    const date = appt.allocations?.date;
+    const branchId = appt.allocations?.branch_id;
+    if (date && branchId) {
+      navigate(`/admin/financial?date=${date}&branch=${branchId}`);
+    } else {
+      navigate(`/admin/financial`);
+    }
+  };
+
   const [filterDate, setFilterDate] = useState('');
   const [filterBranch, setFilterBranch] = useState('');
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (profile?.clinic_id) {
+      fetchAvailableDates();
+    }
+  }, [profile?.clinic_id, filterBranch]);
+
+  const fetchAvailableDates = async () => {
+    const { data } = await supabase
+      .from('allocations')
+      .select('date, branches(name)')
+      .eq('clinic_id', profile!.clinic_id)
+      .order('date', { ascending: false });
+    
+    if (data) {
+      let filtered = data;
+      if (filterBranch) {
+        filtered = data.filter((d: any) => d.branches?.name === filterBranch);
+      }
+      const unique = Array.from(new Set(filtered.map(d => d.date)));
+      setAvailableDates(unique);
+    }
+  };
 
   const uniqueBranches = Array.from(new Set(appointments.map(a => a.allocations?.branches?.name).filter(Boolean))) as string[];
 
@@ -217,12 +271,18 @@ export default function Dashboard() {
         </div>
         <div style={{ flex: 1 }}>
           <label className="form-label" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Filtrar por Data</label>
-          <input 
-            type="date" 
+          <select 
             className="form-control" 
             value={filterDate} 
-            onChange={(e) => setFilterDate(e.target.value)} 
-          />
+            onChange={(e) => setFilterDate(e.target.value)}
+          >
+            <option value="">Todas as datas</option>
+            {availableDates.map(date => (
+              <option key={date} value={date}>
+                {formatDate(date)}
+              </option>
+            ))}
+          </select>
         </div>
         {(filterBranch || filterDate) && (
           <div style={{ display: 'flex', alignItems: 'flex-end' }}>
@@ -263,14 +323,36 @@ export default function Dashboard() {
                     {appt.status.toUpperCase()}
                   </span>
                 </td>
-                <td>
+                <td className="actions-cell">
+                  <button 
+                    onClick={() => goToFinancial(appt)} 
+                    className="action-btn-quick financial"
+                    title="Financeiro"
+                  >
+                    <CircleDollarSign size={20} />
+                  </button>
+                  <button 
+                    onClick={() => handleQuickStatus(appt.id, 'confirmado')} 
+                    className="action-btn-quick confirm"
+                    title="Confirmar Presença"
+                    disabled={appt.status === 'confirmado'}
+                  >
+                    <Check size={20} />
+                  </button>
                   <button 
                     onClick={() => openEditModal(appt)} 
-                    className="action-btn"
-                    title="Editar Agendamento"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)' }}
+                    className="action-btn-quick reschedule"
+                    title="Reagendar"
                   >
-                    <Edit2 size={18} />
+                    <Clock size={20} />
+                  </button>
+                  <button 
+                    onClick={() => handleQuickStatus(appt.id, 'cancelado')} 
+                    className="action-btn-quick cancel"
+                    title="Cancelar"
+                    disabled={appt.status === 'cancelado'}
+                  >
+                    <X size={20} />
                   </button>
                 </td>
               </tr>
