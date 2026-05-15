@@ -1,6 +1,5 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import Stripe from 'https://esm.sh/stripe@12.0.0?target=deno'
+import { createClient } from 'supabase'
+import Stripe from 'stripe'
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
   apiVersion: '2022-11-15',
@@ -9,7 +8,7 @@ const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
 
 const cryptoProvider = Stripe.createEdgeHttpClient()
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   const signature = req.headers.get('stripe-signature')
 
   if (!signature) {
