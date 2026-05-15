@@ -412,7 +412,7 @@ export default function Dashboard() {
                   <option value="" disabled>Selecione a escala</option>
                   {allocations.map(a => (
                     <option key={a.id} value={a.id}>
-                      {formatDate(a.date)} - {a.branches?.name} (com {a.doctors?.name})
+                      {formatDate(a.date)} - {a.branches?.name} ({a.doctors?.name})
                     </option>
                   ))}
                 </select>

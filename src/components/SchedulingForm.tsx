@@ -156,7 +156,7 @@ export default function SchedulingForm({ clinicId }: SchedulingFormProps) {
             <option value="" disabled>Selecione onde e quando</option>
             {allocations.map(a => (
               <option key={a.id} value={a.id}>
-                {formatDate(a.date)} - {a.branches?.name} (com {a.doctors?.name})
+                {formatDate(a.date)} - {a.branches?.name} ({a.doctors?.name})
               </option>
             ))}
           </select>
