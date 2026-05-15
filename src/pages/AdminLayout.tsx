@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Calendar, MapPin, Users, CalendarDays, ExternalLink, LogOut, CreditCard, Clock, AlertTriangle } from 'lucide-react';
+import { Calendar, MapPin, Users, CalendarDays, ExternalLink, LogOut, CreditCard, Clock, AlertTriangle, DollarSign } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
 import './Admin.css';
@@ -50,6 +50,10 @@ export default function AdminLayout() {
           <Link to="/admin/billing" className={`nav-item ${isActive('/admin/billing')}`}>
             <CreditCard size={20} className="nav-icon" /> 
             <span>Plano & Billing</span>
+          </Link>
+          <Link to="/admin/financial" className={`nav-item ${isActive('/admin/financial')}`}>
+            <DollarSign size={20} className="nav-icon" /> 
+            <span>Financeiro</span>
           </Link>
         </nav>
 

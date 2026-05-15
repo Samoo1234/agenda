@@ -8,6 +8,7 @@ import Branches from './pages/Branches';
 import Doctors from './pages/Doctors';
 import Allocations from './pages/Allocations';
 import Billing from './pages/Billing';
+import FinancialRecords from './pages/FinancialRecords';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import UpdatePassword from './pages/UpdatePassword';
@@ -38,6 +39,7 @@ function App() {
             <Route path="doctors" element={<Doctors />} />
             <Route path="allocations" element={<Allocations />} />
             <Route path="billing" element={<Billing />} />
+            <Route path="financial" element={<FinancialRecords />} />
           </Route>
 
           {/* Rota Pública do Paciente (slug da clínica) */}
